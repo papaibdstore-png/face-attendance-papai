@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+<rect width="128" height="128" rx="28" fill="#0f172a"/>
+<path d="M30 74c0-23 15-40 34-40s34 17 34 40" fill="none" stroke="#38bdf8" stroke-width="10" stroke-linecap="round"/>
+<circle cx="64" cy="58" r="18" fill="#22c55e"/>
+<path d="M36 104c5-18 17-28 28-28s23 10 28 28" fill="#22c55e"/>
+<text x="64" y="118" text-anchor="middle" font-size="18" font-family="Arial" fill="#fff" font-weight="700">PAPAI</text>
+</svg>

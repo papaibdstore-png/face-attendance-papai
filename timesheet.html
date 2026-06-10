@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ตารางสรุปเวลาแบบแก้ไขได้</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
+function overrideKey(employeeId,dateKey,scanType){return employeeId+'|'+dateKey+'|'+scanType;}
+
+function getChosenLog(dayLogs,employeeId,dateKey,scanType,mode){
+  const typed=dayLogs.filter(l=>l.scan_type===scanType).sort((a,b)=>new Date(a.scan_time)-new Date(b.scan_time));
+  if(!typed.length)return null;
+  const selectedId=timesheetOverrides[overrideKey(employeeId,dateKey,scanType)];
+  if(selectedId){
+    const found=typed.find(l=>String(l.id)===String(selectedId));
+    if(found)return found;
+  }
+  return mode==='first'?typed[0]:typed[typed.length-1];
+}
+
+function getEffectiveDayLogs(dayLogs,employeeId,dateKey){
+  const result=[];
+  [
+    getChosenLog(dayLogs,employeeId,dateKey,'เข้างาน','first'),
+    getChosenLog(dayLogs,employeeId,dateKey,'ออกพักเที่ยง','first'),
+    getChosenLog(dayLogs,employeeId,dateKey,'กลับจากพักเที่ยง','last'),
+    getChosenLog(dayLogs,employeeId,dateKey,'ออกงานเย็น','last')
+  ].forEach(x=>{if(x)result.push(x);});
+  dayLogs.forEach(l=>{
+    if(!['เข้างาน','ออกพักเที่ยง','กลับจากพักเที่ยง','ออกงานเย็น'].includes(l.scan_type))result.push(l);
+  });
+  return result.sort((a,b)=>new Date(a.scan_time)-new Date(b.scan_time));
+}
+
+function openAuditModal(employeeId,employeeName,employeeCode,dateKey){
+  const dayLogs=logs.filter(l=>String(l.employee_id)===String(employeeId)&&localDateKey(l.scan_time)===dateKey)
+    .sort((a,b)=>new Date(a.scan_time)-new Date(b.scan_time));
+  currentAuditContext={employeeId,employeeName,employeeCode,dateKey};
+  document.getElementById('auditModalTitle').innerText=employeeName+' ('+employeeCode+') วันที่ '+dateKey;
+  const list=document.getElementById('auditModalList');
+
+  if(!dayLogs.length){
+    list.innerHTML='<div class="audit-note">วันนี้ยังไม่มีประวัติสแกน</div>';
+    document.getElementById('auditModalBackdrop').style.display='flex';
+    return;
+  }
+
+  const groups=[
+    {type:'เข้างาน',label:'เข้างาน — ใช้ครั้งแรก',mode:'first'},
+    {type:'ออกพักเที่ยง',label:'ออกพักเที่ยง — ใช้ครั้งแรก',mode:'first'},
+    {type:'กลับจากพักเที่ยง',label:'กลับจากพักเที่ยง — ใช้ครั้งล่าสุด',mode:'last'},
+    {type:'ออกงานเย็น',label:'ออกงานเย็น/OT — ใช้ครั้งล่าสุด',mode:'last'}
+  ];
+
+  let out='';
+  groups.forEach(g=>{
+    const arr=dayLogs.filter(l=>l.scan_type===g.type);
+    if(!arr.length)return;
+    out+=`<div class="audit-note"><b>${g.label}</b></div>`;
+    const selectedId=timesheetOverrides[overrideKey(employeeId,dateKey,g.type)];
+    const defaultLog=g.mode==='first'?arr[0]:arr[arr.length-1];
+
+    arr.forEach(l=>{
+      const isSelected=selectedId?String(selectedId)===String(l.id):String(defaultLog.id)===String(l.id);
+      const timeText=new Date(l.scan_time).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+      out+=`
+        <div class="audit-row ${isSelected?'audit-selected':''}">
+          <div class="audit-time">${timeText}</div>
+          <div class="audit-type">${g.type}<br><span class="audit-badge">${l.status_text||'-'}</span><div class="audit-small">${l.note||'-'}</div></div>
+          <button class="audit-use" onclick="selectAuditLog('${employeeId}','${dateKey}','${g.type}','${l.id}')">ใช้เวลานี้</button>
+        </div>`;
+    });
+  });
+
+  list.innerHTML=out||'<div class="audit-note">ไม่มีรายการที่เลือกได้</div>';
+  document.getElementById('auditModalBackdrop').style.display='flex';
+}
+
+function selectAuditLog(employeeId,dateKey,scanType,logId){
+  timesheetOverrides[overrideKey(employeeId,dateKey,scanType)]=String(logId);
+  localStorage.setItem('timesheetOverrides',JSON.stringify(timesheetOverrides));
+  if(currentAuditContext)openAuditModal(currentAuditContext.employeeId,currentAuditContext.employeeName,currentAuditContext.employeeCode,currentAuditContext.dateKey);
+}
+
+function saveAuditSelection(){
+  closeAuditModal();
+  if(typeof renderGrid==='function')renderGrid();
+  if(typeof searchData==='function')searchData();
+}
+
+function closeAuditModal(){document.getElementById('auditModalBackdrop').style.display='none';}
+
+</script>
+<script src="supabase-config.js">
+function overrideKey(employeeId,dateKey,scanType){return employeeId+'|'+dateKey+'|'+scanType;}
+
+function getChosenLog(dayLogs,employeeId,dateKey,scanType,mode){
+  const typed=dayLogs.filter(l=>l.scan_type===scanType).sort((a,b)=>new Date(a.scan_time)-new Date(b.scan_time));
+  if(!typed.length)return null;
+  const selectedId=timesheetOverrides[overrideKey(employeeId,dateKey,scanType)];
+  if(selectedId){
+    const found=typed.find(l=>String(l.id)===String(selectedId));
+    if(found)return found;
+  }
+  return mode==='first'?typed[0]:typed[typed.length-1];
+}
+
+function getEffectiveDayLogs(dayLogs,employeeId,dateKey){
+  const result=[];
+  [
+    getChosenLog(dayLogs,employeeId,dateKey,'เข้างาน','first'),
+    getChosenLog(dayLogs,employeeId,dateKey,'ออกพักเที่ยง','first'),
+    getChosenLog(dayLogs,employeeId,dateKey,'กลับจากพักเที่ยง','last'),
+    getChosenLog(dayLogs,employeeId,dateKey,'ออกงานเย็น','last')
+  ].forEach(x=>{if(x)result.push(x);});
+  dayLogs.forEach(l=>{
+    if(!['เข้างาน','ออกพักเที่ยง','กลับจากพักเที่ยง','ออกงานเย็น'].includes(l.scan_type))result.push(l);
+  });
+  return result.sort((a,b)=>new Date(a.scan_time)-new Date(b.scan_time));
+}
+
+function openAuditModal(employeeId,employeeName,employeeCode,dateKey){
+  const dayLogs=logs.filter(l=>String(l.employee_id)===String(employeeId)&&localDateKey(l.scan_time)===dateKey)
+    .sort((a,b)=>new Date(a.scan_time)-new Date(b.scan_time));
+  currentAuditContext={employeeId,employeeName,employeeCode,dateKey};
+  document.getElementById('auditModalTitle').innerText=employeeName+' ('+employeeCode+') วันที่ '+dateKey;
+  const list=document.getElementById('auditModalList');
+
+  if(!dayLogs.length){
+    list.innerHTML='<div class="audit-note">วันนี้ยังไม่มีประวัติสแกน</div>';
+    document.getElementById('auditModalBackdrop').style.display='flex';
+    return;
+  }
+
+  const groups=[
+    {type:'เข้างาน',label:'เข้างาน — ใช้ครั้งแรก',mode:'first'},
+    {type:'ออกพักเที่ยง',label:'ออกพักเที่ยง — ใช้ครั้งแรก',mode:'first'},
+    {type:'กลับจากพักเที่ยง',label:'กลับจากพักเที่ยง — ใช้ครั้งล่าสุด',mode:'last'},
+    {type:'ออกงานเย็น',label:'ออกงานเย็น/OT — ใช้ครั้งล่าสุด',mode:'last'}
+  ];
+
+  let out='';
+  groups.forEach(g=>{
+    const arr=dayLogs.filter(l=>l.scan_type===g.type);
+    if(!arr.length)return;
+    out+=`<div class="audit-note"><b>${g.label}</b></div>`;
+    const selectedId=timesheetOverrides[overrideKey(employeeId,dateKey,g.type)];
+    const defaultLog=g.mode==='first'?arr[0]:arr[arr.length-1];
+
+    arr.forEach(l=>{
+      const isSelected=selectedId?String(selectedId)===String(l.id):String(defaultLog.id)===String(l.id);
+      const timeText=new Date(l.scan_time).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+      out+=`
+        <div class="audit-row ${isSelected?'audit-selected':''}">
+          <div class="audit-time">${timeText}</div>
+          <div class="audit-type">${g.type}<br><span class="audit-badge">${l.status_text||'-'}</span><div class="audit-small">${l.note||'-'}</div></div>
+          <button class="audit-use" onclick="selectAuditLog('${employeeId}','${dateKey}','${g.type}','${l.id}')">ใช้เวลานี้</button>
+        </div>`;
+    });
+  });
+
+  list.innerHTML=out||'<div class="audit-note">ไม่มีรายการที่เลือกได้</div>';
+  document.getElementById('auditModalBackdrop').style.display='flex';
+}
+
+function selectAuditLog(employeeId,dateKey,scanType,logId){
+  timesheetOverrides[overrideKey(employeeId,dateKey,scanType)]=String(logId);
+  localStorage.setItem('timesheetOverrides',JSON.stringify(timesheetOverrides));
+  if(currentAuditContext)openAuditModal(currentAuditContext.employeeId,currentAuditContext.employeeName,currentAuditContext.employeeCode,currentAuditContext.dateKey);
+}
+
+function saveAuditSelection(){
+  closeAuditModal();
+  if(typeof renderGrid==='function')renderGrid();
+  if(typeof searchData==='function')searchData();
+}
+
+function closeAuditModal(){document.getElementById('auditModalBackdrop').style.display='none';}
+
+</script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js">
+function overrideKey(employeeId,dateKey,scanType){return employeeId+'|'+dateKey+'|'+scanType;}
+
+function getChosenLog(dayLogs,employeeId,dateKey,scanType,mode){
+  const typed=dayLogs.filter(l=>l.scan_type===scanType).sort((a,b)=>new Date(a.scan_time)-new Date(b.scan_time));
+  if(!typed.length)return null;
+  const selectedId=timesheetOverrides[overrideKey(employeeId,dateKey,scanType)];
+  if(selectedId){
+    const found=typed.find(l=>String(l.id)===String(selectedId));
+    if(found)return found;
+  }
+  return mode==='first'?typed[0]:typed[typed.length-1];
+}
+
+function getEffectiveDayLogs(dayLogs,employeeId,dateKey){
+  const result=[];
+  [
+    getChosenLog(dayLogs,employeeId,dateKey,'เข้างาน','first'),
+    getChosenLog(dayLogs,employeeId,dateKey,'ออกพักเที่ยง','first'),
+    getChosenLog(dayLogs,employeeId,dateKey,'กลับจากพักเที่ยง','last'),
+    getChosenLog(dayLogs,employeeId,dateKey,'ออกงานเย็น','last')
+  ].forEach(x=>{if(x)result.push(x);});
+  dayLogs.forEach(l=>{
+    if(!['เข้างาน','ออกพักเที่ยง','กลับจากพักเที่ยง','ออกงานเย็น'].includes(l.scan_type))result.push(l);
+  });
+  return result.sort((a,b)=>new Date(a.scan_time)-new Date(b.scan_time));
+}
+
+function openAuditModal(employeeId,employeeName,employeeCode,dateKey){
+  const dayLogs=logs.filter(l=>String(l.employee_id)===String(employeeId)&&localDateKey(l.scan_time)===dateKey)
+    .sort((a,b)=>new Date(a.scan_time)-new Date(b.scan_time));
+  currentAuditContext={employeeId,employeeName,employeeCode,dateKey};
+  document.getElementById('auditModalTitle').innerText=employeeName+' ('+employeeCode+') วันที่ '+dateKey;
+  const list=document.getElementById('auditModalList');
+
+  if(!dayLogs.length){
+    list.innerHTML='<div class="audit-note">วันนี้ยังไม่มีประวัติสแกน</div>';
+    document.getElementById('auditModalBackdrop').style.display='flex';
+    return;
+  }
+
+  const groups=[
+    {type:'เข้างาน',label:'เข้างาน — ใช้ครั้งแรก',mode:'first'},
+    {type:'ออกพักเที่ยง',label:'ออกพักเที่ยง — ใช้ครั้งแรก',mode:'first'},
+    {type:'กลับจากพักเที่ยง',label:'กลับจากพักเที่ยง — ใช้ครั้งล่าสุด',mode:'last'},
+    {type:'ออกงานเย็น',label:'ออกงานเย็น/OT — ใช้ครั้งล่าสุด',mode:'last'}
+  ];
+
+  let out='';
+  groups.forEach(g=>{
+    const arr=dayLogs.filter(l=>l.scan_type===g.type);
+    if(!arr.length)return;
+    out+=`<div class="audit-note"><b>${g.label}</b></div>`;
+    const selectedId=timesheetOverrides[overrideKey(employeeId,dateKey,g.type)];
+    const defaultLog=g.mode==='first'?arr[0]:arr[arr.length-1];
+
+    arr.forEach(l=>{
+      const isSelected=selectedId?String(selectedId)===String(l.id):String(defaultLog.id)===String(l.id);
+      const timeText=new Date(l.scan_time).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+      out+=`
+        <div class="audit-row ${isSelected?'audit-selected':''}">
+          <div class="audit-time">${timeText}</div>
+          <div class="audit-type">${g.type}<br><span class="audit-badge">${l.status_text||'-'}</span><div class="audit-small">${l.note||'-'}</div></div>
+          <button class="audit-use" onclick="selectAuditLog('${employeeId}','${dateKey}','${g.type}','${l.id}')">ใช้เวลานี้</button>
+        </div>`;
+    });
+  });
+
+  list.innerHTML=out||'<div class="audit-note">ไม่มีรายการที่เลือกได้</div>';
+  document.getElementById('auditModalBackdrop').style.display='flex';
+}
+
+function selectAuditLog(employeeId,dateKey,scanType,logId){
+  timesheetOverrides[overrideKey(employeeId,dateKey,scanType)]=String(logId);
+  localStorage.setItem('timesheetOverrides',JSON.stringify(timesheetOverrides));
+  if(currentAuditContext)openAuditModal(currentAuditContext.employeeId,currentAuditContext.employeeName,currentAuditContext.employeeCode,currentAuditContext.dateKey);
+}
+
+function saveAuditSelection(){
+  closeAuditModal();
+  if(typeof renderGrid==='function')renderGrid();
+  if(typeof searchData==='function')searchData();
+}
+
+function closeAuditModal(){document.getElementById('auditModalBackdrop').style.display='none';}
+
+</script>
+
+<style>
+
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f8fafc;color:#0f172a;padding:12px}
+.wrap{max-width:1600px;margin:auto}
+h1{margin:0 0 10px}
+.card{background:white;border-radius:14px;padding:12px;margin-bottom:12px;box-shadow:0 4px 16px rgba(15,23,42,.08)}
+.filters{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;align-items:end}
+label{font-size:13px;font-weight:bold;color:#475569}
+input,select,button,textarea{width:100%;padding:10px;border-radius:10px;border:1px solid #cbd5e1;font-size:14px}
+button{background:#2563eb;color:white;border:0;font-weight:bold;cursor:pointer}
+.btn-gray{background:#475569}.btn-green{background:#16a34a}.btn-red{background:#dc2626}
+.table-wrap{overflow:auto;border:1px solid #94a3b8;background:white}
+table{border-collapse:collapse;min-width:1200px;width:max-content}
+th,td{border:1px solid #22c55e;text-align:center;vertical-align:top;font-size:12px}
+th{background:#e2e8f0;position:sticky;top:0;z-index:2;padding:4px}
+.name-col{position:sticky;left:0;z-index:3;background:#fff;min-width:90px;font-weight:bold}
+.no-col{position:sticky;left:90px;z-index:3;background:#fff;min-width:45px}
+.day-head{min-width:76px;background:#e0f2fe}.day-num{font-weight:bold;color:#1d4ed8;font-size:13px}.day-name{font-size:11px;color:#475569}
+.time-cell{min-width:76px;height:86px;padding:2px;line-height:1.25;white-space:pre-line;cursor:pointer}
+.time-cell:hover{outline:3px solid #f97316}
+.emp-row-head{background:#fef08a}.normal-cell{background:#ffffff}.black-cell{background:#000;color:white}.late-cell{background:#fee2e2;color:#991b1b;font-weight:bold}.ot-cell{background:#dbeafe;color:#1d4ed8;font-weight:bold}.half-cell{background:#fef3c7;color:#92400e;font-weight:bold}.sick-cell{background:#7dd3fc;color:#083344;font-weight:bold}.bus-cell{background:#fca5a5;color:#7f1d1d;font-weight:bold}.sick-half-cell{background:#fde68a;color:#78350f;font-weight:bold}.bus-half-cell{background:#d8b4fe;color:#581c87;font-weight:bold}
+.summary-col{min-width:70px;background:#fff7ed;font-weight:bold;font-size:20px;vertical-align:middle}
+.red{color:red;font-weight:bold}.blue{color:#2563eb;font-weight:bold}.orange{color:#b45309;font-weight:bold}
+.legend{display:flex;gap:8px;flex-wrap:wrap;font-size:13px}.legend span{padding:5px 8px;border-radius:8px;border:1px solid #cbd5e1}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(15,23,42,.65);z-index:99;align-items:center;justify-content:center;padding:16px}
+.modal{background:white;border-radius:18px;padding:16px;max-width:520px;width:100%;box-shadow:0 20px 70px rgba(0,0,0,.35)}
+.modal h2{margin:0 0 10px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.modal-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px}
+.note{font-size:12px;color:#64748b;line-height:1.5}
+@media(max-width:900px){.filters{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}.modal-actions{grid-template-columns:1fr}}
+@media print{body{background:white;padding:0}.no-print{display:none}.card{box-shadow:none;border-radius:0}th{position:static}.name-col,.no-col{position:static}}
+
+.btn-excel{
+  background:linear-gradient(135deg,#16a34a,#22c55e);
+  color:white;
+  border:0;
+  font-weight:bold;
+  box-shadow:0 8px 18px rgba(22,163,74,.25);
+}
+.btn-excel:hover{
+  transform:translateY(-1px);
+  filter:brightness(1.05);
+}
+
+
+.person-summary-col{
+  position:sticky;
+  left:135px;
+  z-index:3;
+  background:#f8fafc;
+  min-width:190px;
+  max-width:220px;
+  text-align:left;
+  padding:6px;
+  font-size:12px;
+  line-height:1.45;
+}
+.person-summary-head{
+  background:#e2e8f0;
+  text-align:center;
+  font-weight:bold;
+}
+.sum-badge{
+  display:inline-block;
+  padding:2px 6px;
+  border-radius:999px;
+  margin:1px 2px 2px 0;
+  font-weight:bold;
+  white-space:nowrap;
+}
+.sum-absent{background:#111827;color:white}
+.sum-leave{background:#fef3c7;color:#92400e}
+.sum-late{background:#fee2e2;color:#991b1b}
+.sum-early{background:#ffedd5;color:#9a3412}
+.sum-ot{background:#dbeafe;color:#1d4ed8}
+.sum-work{background:#dcfce7;color:#166534}
+@media print{
+  .person-summary-col{position:static}
+}
+
+
+
+.audit-modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;z-index:99999;padding:18px}
+.audit-modal{width:min(760px,96vw);max-height:90vh;overflow:auto;background:#fff;border-radius:22px;box-shadow:0 24px 80px rgba(15,23,42,.35);border:1px solid #dbeafe}
+.audit-modal-head{padding:18px 22px;background:#eff6ff;border-bottom:1px solid #dbeafe;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.audit-modal-head h3{margin:0;font-size:22px;color:#0f172a}
+.audit-close{background:#ef4444;color:#fff;border:0;border-radius:12px;padding:8px 14px;cursor:pointer;font-weight:bold}
+.audit-modal-body{padding:18px 22px}
+.audit-note{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px;margin-bottom:14px;color:#334155}
+.audit-list{display:grid;gap:10px}
+.audit-row{display:grid;grid-template-columns:90px 1fr auto;gap:10px;align-items:center;padding:12px;border:1px solid #dbeafe;border-radius:14px;background:#fff}
+.audit-time{font-size:22px;font-weight:800;color:#1d4ed8}
+.audit-type{font-size:15px;color:#0f172a;line-height:1.5}
+.audit-badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-weight:bold;margin-top:4px}
+.audit-use{background:#22c55e;color:#fff;border:0;border-radius:12px;padding:10px 14px;cursor:pointer;font-weight:bold}
+.audit-footer{display:flex;gap:10px;justify-content:flex-end;padding:14px 22px 20px}
+.audit-save{background:#2563eb;color:#fff;border:0;border-radius:14px;padding:12px 18px;cursor:pointer;font-weight:bold}
+.audit-cancel{background:#94a3b8;color:#fff;border:0;border-radius:14px;padding:12px 18px;cursor:pointer;font-weight:bold}
+.audit-selected{outline:3px solid #22c55e;background:#f0fdf4}
+.audit-small{font-size:13px;color:#64748b}
+.day-cell{cursor:pointer}
+.day-cell:hover{outline:3px solid #f97316}
+
+</style>
+</head>
+
+<body>
+
+<div class="wrap">
+  <h1>ตารางสรุปเวลาแบบรายวัน</h1>
+
+  <div class="card no-print">
+    <div class="filters">
+      <div><label>วันที่เริ่ม</label><input type="date" id="startDate"></div>
+      <div><label>วันที่สิ้นสุด</label><input type="date" id="endDate"></div>
+      <div><label>เลือกพนักงาน</label><select id="employeeFilter"><option value="">ทั้งหมด</option></select></div>
+      <div><button onclick="loadGrid()">ค้นหา</button></div>
+      <div><button class="btn-gray" onclick="window.print()">พิมพ์ / Save PDF</button></div>
+      <div><button class="btn-excel" onclick="exportExcel()">⬇️ Export Excel</button></div>
+    </div>
+  </div>
+
+  <div class="card no-print">
+    <div class="legend">
+      <span style="background:white">ปกติ</span>
+      <span style="background:#fee2e2;color:#991b1b">สาย/พักเกิน</span>
+      <span style="background:#dbeafe;color:#1d4ed8">OT</span>
+      <span style="background:#fde68a;color:#78350f">ป่วยครึ่งวัน</span>
+      <span style="background:#d8b4fe;color:#581c87">กิจครึ่งวัน</span>
+      <span style="background:#fef3c7;color:#92400e">half / ลาครึ่งวัน</span>
+      <span style="background:#7dd3fc;color:#083344">sick / ลาป่วย</span>
+      <span style="background:#fca5a5;color:#7f1d1d">bus / ลากิจ</span>
+      <span style="background:#000;color:white">ไม่มีข้อมูล</span>
+      <span>คลิกช่องวันเพื่อเพิ่ม/แก้เวลา</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="table-wrap">
+      <table id="gridTable">
+        <thead id="gridHead"></thead>
+        <tbody id="gridBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="editModal" class="modal-bg">
+  <div class="modal">
+    <h2>แก้ไขเวลา</h2>
+    <div id="modalInfo" class="note"></div>
+
+    <div class="grid2" style="margin-top:10px">
+      <div>
+        <label>ประเภท</label>
+        <select id="editScanType">
+          <option value="เข้างาน">เข้างาน</option>
+          <option value="ออกพักเที่ยง">ออกพักเที่ยง</option>
+          <option value="กลับจากพักเที่ยง">กลับจากพักเที่ยง</option>
+          <option value="ออกงานเย็น">ออกงานเย็น</option>
+          <option value="half_am">half / ลาครึ่งวันเช้า</option>
+          <option value="half_pm">half / ลาครึ่งวันบ่าย</option>
+          <option value="sick_am">sick / ลาป่วยครึ่งเช้า</option>
+          <option value="sick_pm">sick / ลาป่วยครึ่งบ่าย</option>
+          <option value="bus_am">bus / ลากิจครึ่งเช้า</option>
+          <option value="bus_pm">bus / ลากิจครึ่งบ่าย</option>
+          <option value="sick">sick / ลาป่วยเต็มวัน</option>
+          <option value="bus">bus / ลากิจเต็มวัน</option>
+        </select>
+      </div>
+      <div>
+        <label>เวลา</label>
+        <input type="time" id="editTime">
+      </div>
+      <div>
+        <label>สถานะ</label>
+        <select id="editStatus">
+          <option value="ปกติ">ปกติ</option>
+          <option value="สาย">สาย</option>
+          <option value="พักเกิน">พักเกิน</option>
+          <option value="OT">OT</option>
+          <option value="ออกก่อนเวลา">ออกก่อนเวลา</option>
+          <option value="ลาครึ่งวัน">ลาครึ่งวัน</option>
+          <option value="ลากิจครึ่งวัน">ลากิจครึ่งวัน</option>
+          <option value="ลาป่วยครึ่งวัน">ลาป่วยครึ่งวัน</option>
+          <option value="ลาป่วย">ลาป่วยเต็มวัน</option>
+          <option value="ลากิจ">ลากิจเต็มวัน</option>
+          <option value="ธุระ">ธุระ</option>
+        </select>
+      </div>
+      <div>
+        <label>จำนวนนาที</label>
+        <input type="number" id="editMinutes" value="0">
+      </div>
+    </div>
+
+    <div style="margin-top:10px">
+      <label>หมายเหตุ</label>
+      <textarea id="editNote" rows="3" placeholder="เช่น ลาครึ่งวันเช้า / ลาครึ่งวันบ่าย / ลืมสแกน"></textarea>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-green" onclick="saveManualLog()">บันทึกเพิ่ม</button>
+      <button class="btn-red" onclick="deleteSelectedLogs()">ลบรายการวันนี้</button>
+      <button class="btn-gray" onclick="closeModal()">ปิด</button>
+    </div>
+
+    <div id="existingLogs" class="note" style="margin-top:12px"></div>
+  </div>
+</div>
+
+
+<script>
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let employees = [];
+let logs = [];
+let timesheetOverrides = JSON.parse(localStorage.getItem('timesheetOverrides') || '{}');
+let currentAuditContext = null;
+let selectedCell = null;
+
+window.addEventListener('load', async () => {
+  setDefaultDates();
+  await loadEmployees();
+  await loadGrid();
+});
+
+document.addEventListener('change', e => {
+  if(e.target && e.target.id === 'editScanType'){
+    const type = e.target.value;
+    if(type === 'half_am'){
+      document.getElementById('editTime').value = '08:00';
+      document.getElementById('editStatus').value = 'ลาครึ่งวัน';
+      document.getElementById('editNote').value = 'ลาครึ่งวันเช้า';
+    }
+    if(type === 'half_pm'){
+      document.getElementById('editTime').value = '13:00';
+      document.getElementById('editStatus').value = 'ลาครึ่งวัน';
+      document.getElementById('editNote').value = 'ลาครึ่งวันบ่าย';
+    }
+    if(type === 'sick_am'){
+      document.getElementById('editTime').value = '08:00';
+      document.getElementById('editStatus').value = 'ลาป่วยครึ่งวัน';
+      document.getElementById('editNote').value = 'ลาป่วยครึ่งเช้า';
+    }
+    if(type === 'sick_pm'){
+      document.getElementById('editTime').value = '13:00';
+      document.getElementById('editStatus').value = 'ลาป่วยครึ่งวัน';
+      document.getElementById('editNote').value = 'ลาป่วยครึ่งบ่าย';
+    }
+    if(type === 'bus_am'){
+      document.getElementById('editTime').value = '08:00';
+      document.getElementById('editStatus').value = 'ลากิจครึ่งวัน';
+      document.getElementById('editNote').value = 'ลากิจครึ่งเช้า';
+    }
+    if(type === 'bus_pm'){
+      document.getElementById('editTime').value = '13:00';
+      document.getElementById('editStatus').value = 'ลากิจครึ่งวัน';
+      document.getElementById('editNote').value = 'ลากิจครึ่งบ่าย';
+    }
+    if(type === 'sick'){
+      document.getElementById('editTime').value = '08:00';
+      document.getElementById('editStatus').value = 'ลาป่วย';
+      document.getElementById('editNote').value = 'ลาป่วยเต็มวัน';
+    }
+    if(type === 'bus'){
+      document.getElementById('editTime').value = '08:00';
+      document.getElementById('editStatus').value = 'ลากิจ';
+      document.getElementById('editNote').value = 'ลากิจเต็มวัน';
+    }
+  }
+});
+
+function setDefaultDates(){
+  const today = new Date();
+  const first = new Date(today.getFullYear(), today.getMonth(), 1);
+  document.getElementById('startDate').value = toDateInput(first);
+  document.getElementById('endDate').value = toDateInput(today);
+}
+
+function toDateInput(date){
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+}
+
+async function loadEmployees(){
+  const {data,error} = await db.from('employees').select('id, employee_code, name, is_active').eq('is_active', true).order('employee_code', {ascending:true});
+  if(error){ alert('โหลดพนักงานไม่สำเร็จ: '+error.message); return; }
+  employees = data || [];
+  const select = document.getElementById('employeeFilter');
+  select.innerHTML = '<option value="">ทั้งหมด</option>';
+  employees.forEach(emp => {
+    const opt = document.createElement('option');
+    opt.value = emp.id;
+    opt.textContent = `${emp.employee_code} - ${emp.name}`;
+    select.appendChild(opt);
+  });
+}
+
+async function loadGrid(){
+  const startValue = document.getElementById('startDate').value;
+  const endValue = document.getElementById('endDate').value;
+  const employeeId = document.getElementById('employeeFilter').value;
+  const start = new Date(startValue + 'T00:00:00');
+  const end = new Date(endValue + 'T23:59:59');
+
+  let query = db.from('attendance_logs').select('*').gte('scan_time', start.toISOString()).lte('scan_time', end.toISOString()).order('scan_time', {ascending:true});
+  if(employeeId) query = query.eq('employee_id', employeeId);
+
+  const {data,error} = await query;
+  if(error){ alert('โหลดเวลาไม่สำเร็จ: '+error.message); return; }
+
+  logs = data || [];
+  const empList = employeeId ? employees.filter(e => e.id === employeeId) : employees;
+  const dates = dateRange(start, end);
+  renderHeader(dates);
+  renderBody(empList, dates);
+}
+
+function renderHeader(dates){
+  let html = '<tr><th class="name-col">ชื่อ</th><th class="no-col">รหัส</th><th class="person-summary-col person-summary-head">สรุป</th>';
+  dates.forEach(d => {
+    html += `<th class="day-head"><div class="day-num">${d.getDate()}</div><div class="day-name">${thaiDay(d)}</div></th>`;
+  });
+  html += '<th class="summary-col">ทำเต็มวัน</th><th class="summary-col">ครึ่งวัน</th><th class="summary-col">ลากิจ</th><th class="summary-col">ลาป่วย</th><th class="summary-col">OT นาที</th></tr>';
+  document.getElementById('gridHead').innerHTML = html;
+}
+
+function renderBody(empList, dates){
+  const body = document.getElementById('gridBody');
+  body.innerHTML = '';
+
+  empList.forEach(emp => {
+    const empLogs = logs.filter(l => l.employee_id === emp.id);
+    let workDays = 0;
+    let halfDays = 0;
+    let businessLeave = 0;
+    let sickLeave = 0;
+    let otTotal = 0;
+    let absentDays = 0;
+    let lateCount = 0;
+    let earlyCount = 0;
+    let html = `<tr><td class="name-col emp-row-head">${safe(emp.name)}</td><td class="no-col emp-row-head">${safe(emp.employee_code)}</td><td class="person-summary-col" id="summary-${emp.id}"></td>`;
+
+    dates.forEach(d => {
+      const key = localDateKey(d);
+      const dayLogs = empLogs.filter(l => localDateKey(l.scan_time) === key);
+      const effectiveLogs = getEffectiveDayLogs(dayLogs, emp.id, key);
+      const cell = buildDayCell(effectiveLogs);
+
+      if(effectiveLogs.length === 0){
+        absentDays += 1;
+      }
+
+      if(effectiveLogs.some(l =>
+        String(l.status_text || '').includes('สาย') ||
+        String(l.status_text || '').includes('พักเกิน') ||
+        Number(l.late_minutes || 0) > 0
+      )){
+        lateCount += 1;
+      }
+
+      if(effectiveLogs.some(l =>
+        String(l.status_text || '').includes('ออกก่อน') ||
+        Number(l.early_leave_minutes || 0) > 0
+      )){
+        earlyCount += 1;
+      }
+
+      const hasHalf = dayLogs.some(l => l.scan_type === 'half_am' || l.scan_type === 'half_pm');
+      const hasBusHalf = dayLogs.some(l => l.scan_type === 'bus_am' || l.scan_type === 'bus_pm');
+      const hasSickHalf = dayLogs.some(l => l.scan_type === 'sick_am' || l.scan_type === 'sick_pm');
+      const hasBusFull = dayLogs.some(l => l.scan_type === 'bus');
+      const hasSickFull = dayLogs.some(l => l.scan_type === 'sick');
+
+      if(hasHalf){
+        halfDays += 0.5;
+      }
+      if(hasBusHalf){
+        businessLeave += 0.5;
+      }
+      if(hasSickHalf){
+        sickLeave += 0.5;
+      }
+      if(hasBusFull){
+        businessLeave += 1;
+      }
+      if(hasSickFull){
+        sickLeave += 1;
+      }
+
+      if(!hasHalf && !hasBusHalf && !hasSickHalf && !hasBusFull && !hasSickFull && dayLogs.length > 0){
+        workDays += 1;
+      }
+
+      otTotal += dayLogs.reduce((a,b)=>a+Number(b.overtime_minutes||0),0);
+      html += `<td class="time-cell ${cell.cls}" onclick="openEditModal('${emp.id}','${key}')">${cell.html}</td>`;
+    });
+
+    const totalLeave = halfDays + businessLeave + sickLeave;
+
+    const summaryHtml =
+      `<div><span class="sum-badge sum-work">ทำ ${workDays}</span>` +
+      `<span class="sum-badge sum-absent">ขาด ${absentDays}</span></div>` +
+      `<div><span class="sum-badge sum-leave">ลากิจ ${businessLeave}</span>` +
+      `<span class="sum-badge sum-leave">ลาป่วย ${sickLeave}</span></div>` +
+      `<div><span class="sum-badge sum-late">สาย ${lateCount}</span>` +
+      `<span class="sum-badge sum-early">ออกก่อน ${earlyCount}</span></div>` +
+      `<div><span class="sum-badge sum-ot">OT ${otTotal}</span>` +
+      `<span class="sum-badge sum-leave">ครึ่งวัน ${halfDays}</span></div>`;
+
+    html = html.replace(`id="summary-${emp.id}"></td>`, `>${summaryHtml}</td>`);
+
+    html += `<td class="summary-col">${workDays}</td><td class="summary-col">${halfDays}</td><td class="summary-col">${businessLeave}</td><td class="summary-col">${sickLeave}</td><td class="summary-col">${otTotal}</td></tr>`;
+    body.innerHTML += html;
+  });
+}
+
+function buildDayCell(dayLogs){
+  if(!dayLogs || dayLogs.length === 0) return {cls:'black-cell', html:''};
+
+  dayLogs.sort((a,b)=>new Date(a.scan_time)-new Date(b.scan_time));
+  let cls = 'normal-cell';
+
+  const hasHalf = dayLogs.some(l => l.scan_type === 'half_am' || l.scan_type === 'half_pm');
+  const hasSick = dayLogs.some(l => l.scan_type === 'sick' || l.scan_type === 'sick_am' || l.scan_type === 'sick_pm');
+  const hasBus = dayLogs.some(l => l.scan_type === 'bus' || l.scan_type === 'bus_am' || l.scan_type === 'bus_pm');
+  const hasLate = dayLogs.some(l => String(l.status_text||'').includes('สาย') || String(l.status_text||'').includes('พักเกิน') || Number(l.late_minutes||0)>0);
+  const hasOt = dayLogs.some(l => Number(l.overtime_minutes||0)>0 || String(l.status_text||'').includes('OT'));
+
+  const hasSickHalfOnly = dayLogs.some(l => l.scan_type === 'sick_am' || l.scan_type === 'sick_pm');
+  const hasBusHalfOnly = dayLogs.some(l => l.scan_type === 'bus_am' || l.scan_type === 'bus_pm');
+  const hasSickFullOnly = dayLogs.some(l => l.scan_type === 'sick');
+  const hasBusFullOnly = dayLogs.some(l => l.scan_type === 'bus');
+
+  if(hasHalf) cls = 'half-cell';
+  if(hasSickFullOnly) cls = 'sick-cell';
+  if(hasBusFullOnly) cls = 'bus-cell';
+  if(hasSickHalfOnly) cls = 'sick-half-cell';
+  if(hasBusHalfOnly) cls = 'bus-half-cell';
+  if(hasLate) cls = 'late-cell';
+  if(hasOt) cls = 'ot-cell';
+
+  const lines = dayLogs.map(l => {
+    const t = formatTimeShort(new Date(l.scan_time));
+    const st = String(l.status_text || '');
+
+    if(l.scan_type === 'half_am') return `<span class="orange">half เช้า</span>`;
+    if(l.scan_type === 'half_pm') return `<span class="orange">half บ่าย</span>`;
+    if(l.scan_type === 'sick_am') return `<span class="blue">sick เช้า</span>`;
+    if(l.scan_type === 'sick_pm') return `<span class="blue">sick บ่าย</span>`;
+    if(l.scan_type === 'bus_am') return `<span class="blue">bus เช้า</span>`;
+    if(l.scan_type === 'bus_pm') return `<span class="blue">bus บ่าย</span>`;
+    if(l.scan_type === 'sick') return `<span class="blue">sick เต็มวัน</span>`;
+    if(l.scan_type === 'bus') return `<span class="blue">bus เต็มวัน</span>`;
+    if(st.includes('สาย') || st.includes('พักเกิน')) return `<span class="red">${t}</span>`;
+    if(st.includes('OT')) return `<span class="blue">${t}</span>`;
+
+    return t;
+  });
+
+  return {cls, html: lines.join('<br>')};
+}
+
+function openEditModal(employeeId, dateKey){
+  const emp = employees.find(e => e.id === employeeId);
+  const dayLogs = logs.filter(l => l.employee_id === employeeId && localDateKey(l.scan_time) === dateKey);
+
+  selectedCell = {employeeId, dateKey, emp, dayLogs};
+
+  document.getElementById('modalInfo').innerHTML = `
+    <b>${safe(emp.name)}</b> รหัส ${safe(emp.employee_code)}<br>
+    วันที่ ${dateKey} (${thaiDay(new Date(dateKey+'T00:00:00'))})
+  `;
+
+  document.getElementById('editTime').value = '08:00';
+  document.getElementById('editScanType').value = 'เข้างาน';
+  document.getElementById('editStatus').value = 'ปกติ';
+  document.getElementById('editMinutes').value = 0;
+  document.getElementById('editNote').value = 'manual edit';
+
+  renderExistingLogs(dayLogs);
+  document.getElementById('editModal').style.display = 'flex';
+}
+
+function renderExistingLogs(dayLogs){
+  const box = document.getElementById('existingLogs');
+  if(!dayLogs.length){
+    box.innerHTML = '<b>รายการเดิม:</b><br>ยังไม่มีข้อมูลวันนี้';
+    return;
+  }
+  box.innerHTML = '<b>รายการเดิม:</b><br>' + dayLogs.map(l => {
+    return `${formatTimeShort(new Date(l.scan_time))} | ${safe(l.scan_type)} | ${safe(l.status_text)} | ${safe(l.note || '')}`;
+  }).join('<br>');
+}
+
+async function saveManualLog(){
+  if(!selectedCell) return;
+
+  const scanType = document.getElementById('editScanType').value;
+  const status = document.getElementById('editStatus').value;
+  const time = document.getElementById('editTime').value;
+  const minutes = Number(document.getElementById('editMinutes').value || 0);
+  const note = document.getElementById('editNote').value || 'manual edit';
+
+  if(!time){
+    alert('กรุณาใส่เวลา');
+    return;
+  }
+
+  const scanDateTime = new Date(selectedCell.dateKey + 'T' + time + ':00');
+
+  let late = 0, early = 0, ot = 0;
+  if(status === 'สาย' || status === 'พักเกิน') late = minutes;
+  if(status === 'ออกก่อนเวลา') early = minutes;
+  if(status === 'OT') ot = minutes;
+
+  const {error} = await db.from('attendance_logs').insert({
+    employee_id: selectedCell.emp.id,
+    employee_code: selectedCell.emp.employee_code,
+    employee_name: selectedCell.emp.name,
+    scan_type: scanType,
+    scan_time: scanDateTime.toISOString(),
+    status_text: status === 'ปกติ' ? 'ปกติ' : status + (minutes ? ' ' + minutes + ' นาที' : ''),
+    late_minutes: late,
+    early_leave_minutes: early,
+    overtime_minutes: ot,
+    note: note,
+    lat: null,
+    lng: null
+  });
+
+  if(error){
+    alert('บันทึกไม่สำเร็จ: ' + error.message);
+    return;
+  }
+
+  alert('บันทึกแล้ว');
+  closeModal();
+  await loadGrid();
+}
+
+async function deleteSelectedLogs(){
+  if(!selectedCell) return;
+  if(!confirm('ต้องการลบรายการเวลาทั้งหมดของวันนี้ของพนักงานคนนี้ใช่ไหม?')) return;
+
+  const ids = selectedCell.dayLogs.map(l => l.id);
+  if(ids.length === 0){
+    alert('ไม่มีรายการให้ลบ');
+    return;
+  }
+
+  const {error} = await db.from('attendance_logs').delete().in('id', ids);
+  if(error){
+    alert('ลบไม่สำเร็จ: ' + error.message);
+    return;
+  }
+
+  alert('ลบแล้ว');
+  closeModal();
+  await loadGrid();
+}
+
+function closeModal(){
+  document.getElementById('editModal').style.display = 'none';
+  selectedCell = null;
+}
+
+function dateRange(start,end){
+  const arr=[]; const d=new Date(start); d.setHours(0,0,0,0); const last=new Date(end); last.setHours(0,0,0,0);
+  while(d<=last){ arr.push(new Date(d)); d.setDate(d.getDate()+1); }
+  return arr;
+}
+
+function thaiDay(date){ return ['อา','จ','อ','พ','พฤ','ศ','ส'][date.getDay()]; }
+function formatTimeShort(date){ return date.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}); }
+function localDateKey(v){ const d=new Date(v); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function safe(v){ return String(v ?? '').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+
+
+
+
+
+function exportExcel(){
+  const table = document.getElementById('gridTable');
+  if(!table){
+    alert('ไม่พบตาราง');
+    return;
+  }
+
+  const rows = table.querySelectorAll('tr');
+  const data = [];
+
+  rows.forEach(row=>{
+    const rowData = [];
+    row.querySelectorAll('th,td').forEach(cell=>{
+      rowData.push((cell.innerText || '').trim());
+    });
+    data.push(rowData);
+  });
+
+  if(data.length === 0){
+    alert('ยังไม่มีข้อมูลสำหรับ Export');
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const range = XLSX.utils.decode_range(ws['!ref']);
+
+  for(let R = range.s.r; R <= range.e.r; ++R){
+    for(let C = range.s.c; C <= range.e.c; ++C){
+      const addr = XLSX.utils.encode_cell({r:R,c:C});
+      if(!ws[addr]) continue;
+
+      const cell = ws[addr];
+      const value = String(cell.v || '');
+
+      cell.s = {
+        font:{
+          name:'Arial',
+          sz:11,
+          bold:R===0
+        },
+        alignment:{
+          vertical:'center',
+          horizontal:'center',
+          wrapText:true
+        },
+        border:{
+          top:{style:'thin',color:{rgb:'CCCCCC'}},
+          bottom:{style:'thin',color:{rgb:'CCCCCC'}},
+          left:{style:'thin',color:{rgb:'CCCCCC'}},
+          right:{style:'thin',color:{rgb:'CCCCCC'}}
+        }
+      };
+
+      // หัวตาราง
+      if(R === 0){
+        cell.s.fill = {fgColor:{rgb:'DCE6F1'}};
+        cell.s.font.bold = true;
+      }
+
+      // ไม่มีข้อมูล = ดำ
+      if(value === ''){
+        cell.s.fill = {fgColor:{rgb:'000000'}};
+        cell.s.font.color = {rgb:'FFFFFF'};
+      }
+
+      // สาย / พักเกิน = แดงอ่อน
+      if(value.includes('สาย') || value.includes('พักเกิน')){
+        cell.s.fill = {fgColor:{rgb:'FEE2E2'}};
+        cell.s.font.color = {rgb:'991B1B'};
+        cell.s.font.bold = true;
+      }
+
+      // ลาป่วยเต็มวัน = ฟ้า
+      if(value.includes('sick เต็มวัน') || value.includes('ลาป่วยเต็มวัน')){
+        cell.s.fill = {fgColor:{rgb:'7DD3FC'}};
+        cell.s.font.color = {rgb:'083344'};
+        cell.s.font.bold = true;
+      }
+
+      // ลากิจเต็มวัน = แดง
+      if(value.includes('bus เต็มวัน') || value.includes('ลากิจเต็มวัน')){
+        cell.s.fill = {fgColor:{rgb:'FCA5A5'}};
+        cell.s.font.color = {rgb:'7F1D1D'};
+        cell.s.font.bold = true;
+      }
+
+      // ป่วยครึ่งวัน = เหลือง
+      if(
+        value.includes('sick เช้า') ||
+        value.includes('sick บ่าย') ||
+        value.includes('ลาป่วยครึ่งวัน')
+      ){
+        cell.s.fill = {fgColor:{rgb:'FDE68A'}};
+        cell.s.font.color = {rgb:'78350F'};
+        cell.s.font.bold = true;
+      }
+
+      // กิจครึ่งวัน = ม่วง
+      if(
+        value.includes('bus เช้า') ||
+        value.includes('bus บ่าย') ||
+        value.includes('ลากิจครึ่งวัน')
+      ){
+        cell.s.fill = {fgColor:{rgb:'D8B4FE'}};
+        cell.s.font.color = {rgb:'581C87'};
+        cell.s.font.bold = true;
+      }
+
+      // ขาด = ดำ
+      if(value.includes('ขาด')){
+        cell.s.fill = {fgColor:{rgb:'111827'}};
+        cell.s.font.color = {rgb:'FFFFFF'};
+        cell.s.font.bold = true;
+      }
+
+      // OT = ตัวหนังสือสีฟ้า
+      if(value.includes('OT') || value.match(/\b\d+\s*นาที\b/)){
+        if(value.includes('OT')){
+          cell.s.font.color = {rgb:'2563EB'};
+          cell.s.font.bold = true;
+        }
+      }
+    }
+  }
+
+  ws['!cols'] = data[0].map((_,i)=>{
+    if(i === 0) return {wch:14};
+    if(i === 1) return {wch:10};
+    if(i === 2) return {wch:22};
+    return {wch:12};
+  });
+
+  ws['!rows'] = data.map((_,i)=>({hpt:i===0?28:48}));
+
+  XLSX.utils.book_append_sheet(wb, ws, 'timesheet');
+
+  const startDate = document.getElementById('startDate').value || '';
+  const endDate = document.getElementById('endDate').value || '';
+
+  XLSX.writeFile(wb, `timesheet_color_${startDate}_${endDate}.xlsx`);
+}
+
+
+function overrideKey(employeeId,dateKey,scanType){return employeeId+'|'+dateKey+'|'+scanType;}
+
+function getChosenLog(dayLogs,employeeId,dateKey,scanType,mode){
+  const typed=dayLogs.filter(l=>l.scan_type===scanType).sort((a,b)=>new Date(a.scan_time)-new Date(b.scan_time));
+  if(!typed.length)return null;
+  const selectedId=timesheetOverrides[overrideKey(employeeId,dateKey,scanType)];
+  if(selectedId){
+    const found=typed.find(l=>String(l.id)===String(selectedId));
+    if(found)return found;
+  }
+  return mode==='first'?typed[0]:typed[typed.length-1];
+}
+
+function getEffectiveDayLogs(dayLogs,employeeId,dateKey){
+  const result=[];
+  [
+    getChosenLog(dayLogs,employeeId,dateKey,'เข้างาน','first'),
+    getChosenLog(dayLogs,employeeId,dateKey,'ออกพักเที่ยง','first'),
+    getChosenLog(dayLogs,employeeId,dateKey,'กลับจากพักเที่ยง','last'),
+    getChosenLog(dayLogs,employeeId,dateKey,'ออกงานเย็น','last')
+  ].forEach(x=>{if(x)result.push(x);});
+  dayLogs.forEach(l=>{
+    if(!['เข้างาน','ออกพักเที่ยง','กลับจากพักเที่ยง','ออกงานเย็น'].includes(l.scan_type))result.push(l);
+  });
+  return result.sort((a,b)=>new Date(a.scan_time)-new Date(b.scan_time));
+}
+
+function openAuditModal(employeeId,employeeName,employeeCode,dateKey){
+  const dayLogs=logs.filter(l=>String(l.employee_id)===String(employeeId)&&localDateKey(l.scan_time)===dateKey)
+    .sort((a,b)=>new Date(a.scan_time)-new Date(b.scan_time));
+  currentAuditContext={employeeId,employeeName,employeeCode,dateKey};
+  document.getElementById('auditModalTitle').innerText=employeeName+' ('+employeeCode+') วันที่ '+dateKey;
+  const list=document.getElementById('auditModalList');
+
+  if(!dayLogs.length){
+    list.innerHTML='<div class="audit-note">วันนี้ยังไม่มีประวัติสแกน</div>';
+    document.getElementById('auditModalBackdrop').style.display='flex';
+    return;
+  }
+
+  const groups=[
+    {type:'เข้างาน',label:'เข้างาน — ใช้ครั้งแรก',mode:'first'},
+    {type:'ออกพักเที่ยง',label:'ออกพักเที่ยง — ใช้ครั้งแรก',mode:'first'},
+    {type:'กลับจากพักเที่ยง',label:'กลับจากพักเที่ยง — ใช้ครั้งล่าสุด',mode:'last'},
+    {type:'ออกงานเย็น',label:'ออกงานเย็น/OT — ใช้ครั้งล่าสุด',mode:'last'}
+  ];
+
+  let out='';
+  groups.forEach(g=>{
+    const arr=dayLogs.filter(l=>l.scan_type===g.type);
+    if(!arr.length)return;
+    out+=`<div class="audit-note"><b>${g.label}</b></div>`;
+    const selectedId=timesheetOverrides[overrideKey(employeeId,dateKey,g.type)];
+    const defaultLog=g.mode==='first'?arr[0]:arr[arr.length-1];
+
+    arr.forEach(l=>{
+      const isSelected=selectedId?String(selectedId)===String(l.id):String(defaultLog.id)===String(l.id);
+      const timeText=new Date(l.scan_time).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+      out+=`
+        <div class="audit-row ${isSelected?'audit-selected':''}">
+          <div class="audit-time">${timeText}</div>
+          <div class="audit-type">${g.type}<br><span class="audit-badge">${l.status_text||'-'}</span><div class="audit-small">${l.note||'-'}</div></div>
+          <button class="audit-use" onclick="selectAuditLog('${employeeId}','${dateKey}','${g.type}','${l.id}')">ใช้เวลานี้</button>
+        </div>`;
+    });
+  });
+
+  list.innerHTML=out||'<div class="audit-note">ไม่มีรายการที่เลือกได้</div>';
+  document.getElementById('auditModalBackdrop').style.display='flex';
+}
+
+function selectAuditLog(employeeId,dateKey,scanType,logId){
+  timesheetOverrides[overrideKey(employeeId,dateKey,scanType)]=String(logId);
+  localStorage.setItem('timesheetOverrides',JSON.stringify(timesheetOverrides));
+  if(currentAuditContext)openAuditModal(currentAuditContext.employeeId,currentAuditContext.employeeName,currentAuditContext.employeeCode,currentAuditContext.dateKey);
+}
+
+function saveAuditSelection(){
+  closeAuditModal();
+  if(typeof renderGrid==='function')renderGrid();
+  if(typeof searchData==='function')searchData();
+}
+
+function closeAuditModal(){document.getElementById('auditModalBackdrop').style.display='none';}
+
+</script>
+
+<div id="auditModalBackdrop" class="audit-modal-backdrop">
+  <div class="audit-modal">
+    <div class="audit-modal-head">
+      <h3 id="auditModalTitle">เลือกเวลาที่ใช้คำนวณ</h3>
+      <button class="audit-close" onclick="closeAuditModal()">ปิด</button>
+    </div>
+    <div class="audit-modal-body">
+      <div class="audit-note">ระบบจะไม่ลบประวัติสแกนเดิม แต่จะเลือกเวลาที่ใช้คำนวณใน timesheet</div>
+      <div id="auditModalList" class="audit-list"></div>
+    </div>
+    <div class="audit-footer">
+      <button class="audit-cancel" onclick="closeAuditModal()">ยกเลิก</button>
+      <button class="audit-save" onclick="saveAuditSelection()">บันทึกการเลือก</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

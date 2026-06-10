@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard เงินเดือนจากระบบสแกนหน้า</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  background:#f1f5f9;
+  color:#0f172a;
+  padding:16px;
+}
+.wrap{max-width:1500px;margin:auto}
+h1{margin:0 0 6px}
+.sub{color:#64748b;margin-bottom:14px}
+.card{
+  background:white;
+  border-radius:18px;
+  padding:16px;
+  margin-bottom:14px;
+  box-shadow:0 4px 18px rgba(15,23,42,.08);
+}
+.filters{
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:10px;
+  align-items:end;
+}
+label{font-size:13px;color:#475569;font-weight:bold}
+input,select,button{
+  width:100%;
+  padding:10px;
+  border-radius:10px;
+  border:1px solid #cbd5e1;
+  font-size:14px;
+}
+button{
+  background:#2563eb;
+  color:white;
+  border:0;
+  font-weight:bold;
+  cursor:pointer;
+}
+.btn-green{background:#16a34a}
+.btn-gray{background:#475569}
+.btn-orange{background:#f97316}
+.summary{
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:10px;
+}
+.box{
+  background:#0f172a;
+  color:white;
+  border-radius:16px;
+  padding:14px;
+}
+.box .num{font-size:26px;font-weight:bold;color:#fde68a}
+.table-wrap{overflow:auto}
+table{
+  width:100%;
+  border-collapse:collapse;
+  background:white;
+  min-width:1350px;
+}
+th,td{
+  padding:8px;
+  border:1px solid #e2e8f0;
+  text-align:center;
+  font-size:13px;
+  white-space:nowrap;
+}
+th{
+  background:#e2e8f0;
+  position:sticky;
+  top:0;
+  z-index:1;
+}
+td.name{text-align:left;font-weight:bold}
+td.money, th.money{background:#fff7ed}
+td.deduct, th.deduct{background:#fef2f2}
+td.final, th.final{background:#ecfdf5;font-weight:bold}
+.edit{
+  width:80px;
+  padding:6px;
+  text-align:right;
+}
+.edit-wide{width:120px}
+.badge{
+  padding:4px 8px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:bold;
+  display:inline-block;
+}
+.normal{background:#dcfce7;color:#166534}
+.late{background:#fee2e2;color:#991b1b}
+.ot{background:#dbeafe;color:#1d4ed8}
+.early{background:#fef3c7;color:#92400e}
+.note{font-size:12px;color:#64748b;line-height:1.6}
+.actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+@media(max-width:900px){
+  .filters{grid-template-columns:1fr}
+  .summary{grid-template-columns:1fr 1fr}
+}
+@media print{
+  body{background:white;padding:0}
+  .no-print{display:none}
+  .card{box-shadow:none;border-radius:0}
+}
+</style>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+</head>
+
+<body>
+<div class="wrap">
+  <h1>Dashboard ตัดเงินเดือน</h1>
+  <div class="sub">ดึงเวลาจาก Supabase + กรอกค่าแรง/เบี้ย/หักเองได้ คล้ายฟอร์ม Excel</div>
+
+  <div class="card no-print">
+    <div class="filters">
+      <div>
+        <label>วันที่เริ่ม</label>
+        <input type="date" id="startDate">
+      </div>
+      <div>
+        <label>วันที่สิ้นสุด</label>
+        <input type="date" id="endDate">
+      </div>
+      <div>
+        <label>เลือกพนักงาน</label>
+        <select id="employeeFilter">
+          <option value="">ทั้งหมด</option>
+        </select>
+      </div>
+      <div>
+        <label>OT บาท/ชั่วโมง ค่าเริ่มต้น</label>
+        <input type="number" id="defaultOtRate" value="80">
+      </div>
+      <div>
+        <button onclick="loadDashboard()">ค้นหา</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="box">
+      <div>จำนวนพนักงาน</div>
+      <div id="sumEmployees" class="num">0</div>
+    </div>
+    <div class="box">
+      <div>สายรวม</div>
+      <div id="sumLate" class="num">0</div>
+      <div>นาที</div>
+    </div>
+    <div class="box">
+      <div>พักเกินรวม</div>
+      <div id="sumLunchLate" class="num">0</div>
+      <div>นาที</div>
+    </div>
+    <div class="box">
+      <div>OT รวม</div>
+      <div id="sumOt" class="num">0</div>
+      <div>นาที</div>
+    </div>
+    <div class="box">
+      <div>ยอดจ่ายสุทธิรวม</div>
+      <div id="sumNetPay" class="num">0</div>
+      <div>บาท</div>
+    </div>
+  </div>
+
+  <div class="card no-print">
+    <div class="actions">
+      <button class="btn-green" onclick="savePayrollInputs()">บันทึกค่าที่กรอก</button>
+      <button class="btn-orange" onclick="loadSavedPayrollInputs()">โหลดค่าที่เคยกรอก</button>
+      <button class="btn-green" onclick="exportPayrollCSV()">Export เงินเดือน CSV</button>
+      <button class="btn-gray" onclick="window.print()">พิมพ์ / Save PDF</button>
+    </div>
+    <div class="note" style="margin-top:10px">
+      ช่องสีส้ม/แดงสามารถกรอกเองได้ เช่น ค่าแรงรายวัน เบี้ยขยัน ค่าอาหาร เงินพิเศษ หัก/เบิกก่อน ลากิจ ลาป่วย ฯลฯ แล้วกด “บันทึกค่าที่กรอก”
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>สรุปเงินเดือน</h2>
+    <div class="table-wrap">
+      <table id="payrollTable">
+        <thead>
+          <tr>
+            <th>รหัส</th>
+            <th>ชื่อ</th>
+            <th>ทำเต็มวัน</th>
+            <th>ครึ่งวัน</th>
+            <th>หยุด/ขาด</th>
+            <th>รวมวันทำงาน</th>
+            <th class="money">ค่าแรง/วัน</th>
+            <th class="money">ค่าแรงรวม</th>
+            <th>สายรวม</th>
+            <th>พักเกิน</th>
+            <th>ออกก่อน</th>
+            <th>ลืมสแกน</th>
+            <th class="money">เบี้ยขยัน</th>
+            <th class="money">ค่าอาหาร/วัน</th>
+            <th class="money">ค่าอาหารรวม</th>
+            <th>OT นาที</th>
+            <th class="money">OT บาท/ชม.</th>
+            <th class="money">เงิน OT</th>
+            <th class="money">เงินพิเศษ</th>
+            <th class="deduct">ลากิจ</th>
+            <th class="deduct">ลาป่วย</th>
+            <th class="deduct">หัก/เบิกก่อน</th>
+            <th class="deduct">หักอื่น ๆ</th>
+            <th class="final">รวมก่อนหัก</th>
+            <th class="final">ค่าแรงสุทธิ</th>
+            <th>หมายเหตุ</th>
+          </tr>
+        </thead>
+        <tbody id="payrollBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>รายละเอียดเวลา</h2>
+    <div class="table-wrap">
+      <table id="detailTable">
+        <thead>
+          <tr>
+            <th>วันที่</th>
+            <th>วัน</th>
+            <th>เวลา</th>
+            <th>รหัส</th>
+            <th>ชื่อ</th>
+            <th>ประเภท</th>
+            <th>สถานะ</th>
+            <th>สาย</th>
+            <th>พักเกิน</th>
+            <th>ออกก่อน</th>
+            <th>OT</th>
+            <th>หมายเหตุ</th>
+          </tr>
+        </thead>
+        <tbody id="detailBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let employees = [];
+let logs = [];
+let payrollRows = [];
+
+window.addEventListener('load', async () => {
+  setDefaultDates();
+  await loadEmployees();
+  await loadDashboard();
+});
+
+function setDefaultDates(){
+  const today = new Date();
+  const first = new Date(today.getFullYear(), today.getMonth(), 1);
+  document.getElementById('startDate').value = toDateInput(first);
+  document.getElementById('endDate').value = toDateInput(today);
+}
+
+function toDateInput(date){
+  const y = date.getFullYear();
+  const m = String(date.getMonth()+1).padStart(2,'0');
+  const d = String(date.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+
+async function loadEmployees(){
+  const {data,error} = await db
+    .from('employees')
+    .select('id, employee_code, name, is_active')
+    .eq('is_active', true)
+    .order('employee_code', {ascending:true});
+
+  if(error){
+    alert('โหลดรายชื่อพนักงานไม่สำเร็จ: ' + error.message);
+    return;
+  }
+
+  employees = data || [];
+  const select = document.getElementById('employeeFilter');
+  select.innerHTML = '<option value="">ทั้งหมด</option>';
+
+  employees.forEach(emp => {
+    const opt = document.createElement('option');
+    opt.value = emp.id;
+    opt.textContent = `${emp.employee_code} - ${emp.name}`;
+    select.appendChild(opt);
+  });
+}
+
+async function loadDashboard(){
+  const startDate = document.getElementById('startDate').value;
+  const endDate = document.getElementById('endDate').value;
+  const employeeId = document.getElementById('employeeFilter').value;
+
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T23:59:59');
+
+  let query = db
+    .from('attendance_logs')
+    .select('*')
+    .gte('scan_time', start.toISOString())
+    .lte('scan_time', end.toISOString())
+    .order('scan_time', {ascending:true});
+
+  if(employeeId){
+    query = query.eq('employee_id', employeeId);
+  }
+
+  const {data,error} = await query;
+
+  if(error){
+    alert('โหลดข้อมูลไม่สำเร็จ: ' + error.message);
+    return;
+  }
+
+  logs = data || [];
+
+  buildPayrollRows();
+  renderPayroll();
+  renderDetail();
+  loadSavedPayrollInputs();
+}
+
+function buildPayrollRows(){
+  const selectedEmployeeId = document.getElementById('employeeFilter').value;
+  const empList = selectedEmployeeId ? employees.filter(e => e.id === selectedEmployeeId) : employees;
+
+  payrollRows = empList.map(emp => {
+    const empLogs = logs.filter(l => l.employee_id === emp.id);
+
+    const checkInDays = uniqueDates(empLogs.filter(l => l.scan_type === 'เข้างาน').map(l => l.scan_time));
+    const workDays = checkInDays.length;
+
+    const lateMinutes = sum(empLogs, 'late_minutes');
+    const earlyMinutes = sum(empLogs, 'early_leave_minutes');
+    const otMinutes = sum(empLogs, 'overtime_minutes');
+    const lunchLate = empLogs
+      .filter(l => String(l.scan_type || '').includes('พัก'))
+      .reduce((a,b)=> a + Number(b.late_minutes || 0), 0);
+
+    const scanCountByDate = {};
+    empLogs.forEach(l => {
+      const d = localDateKey(l.scan_time);
+      scanCountByDate[d] = (scanCountByDate[d] || 0) + 1;
+    });
+
+    const missingScan = Object.values(scanCountByDate).filter(c => c < 2).length;
+
+    return {
+      employee_id: emp.id,
+      employee_code: emp.employee_code,
+      employee_name: emp.name,
+      full_days: workDays,
+      half_days: 0,
+      absent_days: 0,
+      work_days: workDays,
+      daily_wage: 0,
+      wage_total: 0,
+      late_minutes: lateMinutes,
+      lunch_late_minutes: lunchLate,
+      early_leave_minutes: earlyMinutes,
+      missing_scan: missingScan,
+      diligence_bonus: 0,
+      lunch_allowance_per_day: 0,
+      lunch_allowance_total: 0,
+      ot_minutes: otMinutes,
+      ot_rate_hour: Number(document.getElementById('defaultOtRate').value || 80),
+      ot_money: 0,
+      special_money: 0,
+      business_leave_deduct: 0,
+      sick_leave_deduct: 0,
+      advance_deduct: 0,
+      other_deduct: 0,
+      gross_pay: 0,
+      net_pay: 0,
+      remark: ''
+    };
+  });
+}
+
+function renderPayroll(){
+  const body = document.getElementById('payrollBody');
+  body.innerHTML = '';
+
+  payrollRows.forEach((r, index) => {
+    body.innerHTML += `
+      <tr data-row="${index}">
+        <td>${safe(r.employee_code)}</td>
+        <td class="name">${safe(r.employee_name)}</td>
+        <td><input class="edit" data-field="full_days" type="number" step="0.5" value="${r.full_days}" oninput="recalcRow(${index})"></td>
+        <td><input class="edit" data-field="half_days" type="number" step="0.5" value="${r.half_days}" oninput="recalcRow(${index})"></td>
+        <td><input class="edit" data-field="absent_days" type="number" step="0.5" value="${r.absent_days}" oninput="recalcRow(${index})"></td>
+        <td id="work_days_${index}">${fmt(r.work_days)}</td>
+        <td class="money"><input class="edit" data-field="daily_wage" type="number" value="${r.daily_wage}" oninput="recalcRow(${index})"></td>
+        <td class="money" id="wage_total_${index}">0</td>
+        <td>${r.late_minutes}</td>
+        <td>${r.lunch_late_minutes}</td>
+        <td>${r.early_leave_minutes}</td>
+        <td><input class="edit" data-field="missing_scan" type="number" value="${r.missing_scan}" oninput="recalcRow(${index})"></td>
+        <td class="money"><input class="edit" data-field="diligence_bonus" type="number" value="${r.diligence_bonus}" oninput="recalcRow(${index})"></td>
+        <td class="money"><input class="edit" data-field="lunch_allowance_per_day" type="number" value="${r.lunch_allowance_per_day}" oninput="recalcRow(${index})"></td>
+        <td class="money" id="lunch_allowance_total_${index}">0</td>
+        <td>${r.ot_minutes}</td>
+        <td class="money"><input class="edit" data-field="ot_rate_hour" type="number" value="${r.ot_rate_hour}" oninput="recalcRow(${index})"></td>
+        <td class="money" id="ot_money_${index}">0</td>
+        <td class="money"><input class="edit" data-field="special_money" type="number" value="${r.special_money}" oninput="recalcRow(${index})"></td>
+        <td class="deduct"><input class="edit" data-field="business_leave_deduct" type="number" value="${r.business_leave_deduct}" oninput="recalcRow(${index})"></td>
+        <td class="deduct"><input class="edit" data-field="sick_leave_deduct" type="number" value="${r.sick_leave_deduct}" oninput="recalcRow(${index})"></td>
+        <td class="deduct"><input class="edit" data-field="advance_deduct" type="number" value="${r.advance_deduct}" oninput="recalcRow(${index})"></td>
+        <td class="deduct"><input class="edit" data-field="other_deduct" type="number" value="${r.other_deduct}" oninput="recalcRow(${index})"></td>
+        <td class="final" id="gross_pay_${index}">0</td>
+        <td class="final" id="net_pay_${index}">0</td>
+        <td><input class="edit-wide" data-field="remark" type="text" value="${safe(r.remark)}" oninput="recalcRow(${index})"></td>
+      </tr>
+    `;
+  });
+
+  payrollRows.forEach((_, i) => recalcRow(i));
+}
+
+function recalcRow(index){
+  const tr = document.querySelector(`tr[data-row="${index}"]`);
+  if(!tr) return;
+
+  const r = payrollRows[index];
+
+  tr.querySelectorAll('input[data-field]').forEach(input => {
+    const field = input.dataset.field;
+    if(input.type === 'number'){
+      r[field] = Number(input.value || 0);
+    }else{
+      r[field] = input.value || '';
+    }
+  });
+
+  r.work_days = Number(r.full_days || 0) + (Number(r.half_days || 0) * 0.5);
+  r.wage_total = r.work_days * Number(r.daily_wage || 0);
+  r.lunch_allowance_total = r.work_days * Number(r.lunch_allowance_per_day || 0);
+  r.ot_money = (Number(r.ot_minutes || 0) / 60) * Number(r.ot_rate_hour || 0);
+
+  r.gross_pay =
+    Number(r.wage_total || 0) +
+    Number(r.diligence_bonus || 0) +
+    Number(r.lunch_allowance_total || 0) +
+    Number(r.ot_money || 0) +
+    Number(r.special_money || 0);
+
+  const totalDeduct =
+    Number(r.business_leave_deduct || 0) +
+    Number(r.sick_leave_deduct || 0) +
+    Number(r.advance_deduct || 0) +
+    Number(r.other_deduct || 0);
+
+  r.net_pay = r.gross_pay - totalDeduct;
+
+  setText(`work_days_${index}`, fmt(r.work_days));
+  setText(`wage_total_${index}`, money(r.wage_total));
+  setText(`lunch_allowance_total_${index}`, money(r.lunch_allowance_total));
+  setText(`ot_money_${index}`, money(r.ot_money));
+  setText(`gross_pay_${index}`, money(r.gross_pay));
+  setText(`net_pay_${index}`, money(r.net_pay));
+
+  updateTopSummary();
+}
+
+function updateTopSummary(){
+  document.getElementById('sumEmployees').innerText = payrollRows.length;
+  document.getElementById('sumLate').innerText = payrollRows.reduce((a,b)=>a+Number(b.late_minutes||0),0);
+  document.getElementById('sumLunchLate').innerText = payrollRows.reduce((a,b)=>a+Number(b.lunch_late_minutes||0),0);
+  document.getElementById('sumOt').innerText = payrollRows.reduce((a,b)=>a+Number(b.ot_minutes||0),0);
+  document.getElementById('sumNetPay').innerText = money(payrollRows.reduce((a,b)=>a+Number(b.net_pay||0),0));
+}
+
+function renderDetail(){
+  const body = document.getElementById('detailBody');
+  body.innerHTML = '';
+
+  logs.forEach(r => {
+    const d = new Date(r.scan_time);
+    const lunchLate = String(r.scan_type || '').includes('พัก') ? Number(r.late_minutes || 0) : 0;
+
+    body.innerHTML += `
+      <tr>
+        <td>${formatDate(d)}</td>
+        <td>${thaiDay(d)}</td>
+        <td>${formatTime(d)}</td>
+        <td>${safe(r.employee_code)}</td>
+        <td>${safe(r.employee_name)}</td>
+        <td>${safe(r.scan_type)}</td>
+        <td>${statusBadge(r.status_text)}</td>
+        <td>${Number(r.late_minutes || 0)}</td>
+        <td>${lunchLate}</td>
+        <td>${Number(r.early_leave_minutes || 0)}</td>
+        <td>${Number(r.overtime_minutes || 0)}</td>
+        <td>${safe(r.note)}</td>
+      </tr>
+    `;
+  });
+}
+
+function savePayrollInputs(){
+  const key = payrollStorageKey();
+  const saveData = payrollRows.map(r => ({
+    employee_id: r.employee_id,
+    full_days: r.full_days,
+    half_days: r.half_days,
+    absent_days: r.absent_days,
+    daily_wage: r.daily_wage,
+    missing_scan: r.missing_scan,
+    diligence_bonus: r.diligence_bonus,
+    lunch_allowance_per_day: r.lunch_allowance_per_day,
+    ot_rate_hour: r.ot_rate_hour,
+    special_money: r.special_money,
+    business_leave_deduct: r.business_leave_deduct,
+    sick_leave_deduct: r.sick_leave_deduct,
+    advance_deduct: r.advance_deduct,
+    other_deduct: r.other_deduct,
+    remark: r.remark
+  }));
+
+  localStorage.setItem(key, JSON.stringify(saveData));
+  alert('บันทึกค่าที่กรอกแล้ว');
+}
+
+function loadSavedPayrollInputs(){
+  const key = payrollStorageKey();
+  const raw = localStorage.getItem(key);
+  if(!raw) return;
+
+  let saved = [];
+  try{
+    saved = JSON.parse(raw);
+  }catch(e){
+    return;
+  }
+
+  saved.forEach(s => {
+    const idx = payrollRows.findIndex(r => r.employee_id === s.employee_id);
+    if(idx >= 0){
+      Object.assign(payrollRows[idx], s);
+    }
+  });
+
+  renderPayroll();
+}
+
+function payrollStorageKey(){
+  return 'payroll_' + document.getElementById('startDate').value + '_' + document.getElementById('endDate').value;
+}
+
+function exportPayrollCSV(){
+  if(payrollRows.length === 0){
+    alert('ไม่มีข้อมูลให้ Export');
+    return;
+  }
+
+  const header = [
+    'รหัส','ชื่อ','ทำเต็มวัน','ครึ่งวัน','หยุด/ขาด','รวมวันทำงาน','ค่าแรงต่อวัน','ค่าแรงรวม',
+    'สายรวม','พักเกิน','ออกก่อน','ลืมสแกน','เบี้ยขยัน','ค่าอาหารต่อวัน','ค่าอาหารรวม',
+    'OT นาที','OT บาทต่อชั่วโมง','เงิน OT','เงินพิเศษ','ลากิจ','ลาป่วย','หัก/เบิกก่อน','หักอื่นๆ',
+    'รวมก่อนหัก','ค่าแรงสุทธิ','หมายเหตุ'
+  ];
+
+  const lines = [header];
+
+  payrollRows.forEach(r => {
+    lines.push([
+      r.employee_code, r.employee_name, r.full_days, r.half_days, r.absent_days, r.work_days, r.daily_wage, r.wage_total,
+      r.late_minutes, r.lunch_late_minutes, r.early_leave_minutes, r.missing_scan, r.diligence_bonus,
+      r.lunch_allowance_per_day, r.lunch_allowance_total, r.ot_minutes, r.ot_rate_hour, r.ot_money, r.special_money,
+      r.business_leave_deduct, r.sick_leave_deduct, r.advance_deduct, r.other_deduct, r.gross_pay, r.net_pay, r.remark
+    ]);
+  });
+
+  const csv = lines
+    .map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g,'""')}"`).join(','))
+    .join('\n');
+
+  const blob = new Blob(['\ufeff' + csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+
+  a.href = url;
+  a.download = 'payroll-dashboard.csv';
+  a.click();
+
+  URL.revokeObjectURL(url);
+}
+
+function uniqueDates(arr){
+  return [...new Set(arr.map(x => localDateKey(x)))];
+}
+
+function localDateKey(v){
+  const d = new Date(v);
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+
+function statusBadge(text){
+  const t = String(text || '');
+  let cls = 'normal';
+  if(t.includes('สาย') || t.includes('พักเกิน')) cls = 'late';
+  if(t.includes('OT')) cls = 'ot';
+  if(t.includes('ออกก่อน')) cls = 'early';
+  return `<span class="badge ${cls}">${safe(t)}</span>`;
+}
+
+function thaiDay(date){
+  const days = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+  return days[date.getDay()];
+}
+
+function formatDate(date){
+  return date.toLocaleDateString('th-TH');
+}
+
+function formatTime(date){
+  return date.toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+
+function sum(rows, field){
+  return rows.reduce((a,b)=> a + Number(b[field] || 0), 0);
+}
+
+function money(v){
+  return Number(v || 0).toLocaleString('th-TH', {maximumFractionDigits:2});
+}
+
+function fmt(v){
+  return Number(v || 0).toLocaleString('th-TH', {maximumFractionDigits:2});
+}
+
+function setText(id, text){
+  const el = document.getElementById(id);
+  if(el) el.innerText = text;
+}
+
+function safe(v){
+  return String(v ?? '').replace(/[&<>"']/g, m => ({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#039;'
+  }[m]));
+}
+</script>
+</body>
+</html>
