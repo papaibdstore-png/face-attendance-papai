@@ -731,14 +731,23 @@ async function autoScanFace(){
     }
 
     const now = Date.now();
-    if(lastSaved.employee_id === bestMatch.id && (now - lastSaved.time) < SAME_PERSON_COOLDOWN_SECONDS * 1000){
-      statusText.innerText = 'เพิ่งสแกนคนนี้ไป กรุณารอสักครู่';
-      setBigStatus('รอสักครู่', 'warning');
-      pauseBtn.disabled = false;
-      pauseBtn.innerText = 'เริ่มสแกน';
-      isScanning = false;
-      return;
-    }
+    if(
+  lastSaved.employee_id === bestMatch.id &&
+  (now - lastSaved.time) < SAME_PERSON_COOLDOWN_SECONDS * 1000
+){
+
+  statusText.innerText = 'สถานะนี้สแกนไปแล้ว แต่ยังบันทึกซ้ำได้';
+
+  setBigStatus('สแกนซ้ำ', 'warning');
+
+  playWarningSound();
+
+  speakThai(
+    bestMatch.name +
+    ' สถานะนี้สแกนสำเร็จแล้ว แต่ยังสามารถบันทึกได้'
+  );
+
+}
 
     const scanTime = new Date();
     const rule = await calculateAutoAttendanceStatus(scanTime, bestMatch);
