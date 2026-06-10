@@ -760,7 +760,7 @@ async function autoScanFace(){
       statusText.innerText = 'สถานะนี้เคยสแกนแล้ว วันนี้เวลา ' + oldTime + ' แต่ยังบันทึกซ้ำได้';
       setBigStatus('⚠️ สแกนสถานะซ้ำ', 'warning');
       playWarningSound();
-      speakThai(bestMatch.name + ' สถานะ ' + rule.scan_type + ' เคยสแกนแล้ว แต่ยังบันทึกซ้ำได้ครับ');
+      speakThai(bestMatch.name + ' สถานะ ' + rule.scan_type + ' เคยสแกนแล้ว');
       rule.note = 'สแกนซ้ำ: วันนี้เคยบันทึก ' + rule.scan_type + ' เวลา ' + oldTime + ' | ' + rule.note;
     }
 
