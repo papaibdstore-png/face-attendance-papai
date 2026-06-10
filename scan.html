@@ -793,7 +793,7 @@ async function autoScanFace(){
 
     if(isDuplicateStatus){
       setBigStatus('⚠️ สแกนสถานะซ้ำ', 'warning');
-    }else if(rule.status_text.includes('สาย') || rule.status_text.includes('พักเกิน') || rule.status_text.includes('ออกก่อน')){
+    }else if(rule.status_text.includes('สาย') || rule.status_text.includes('พักเกิน') || rule.status_text.includes('ออกก่อน') || rule.status_text.includes('สแกนพักเที่ยงซ้ำ')){
       setBigStatus('⚠️ ' + rule.status_text, 'warning');
     }else if(rule.status_text.includes('OT')){
       setBigStatus('🕒 ' + rule.status_text, 'ot');
@@ -1003,33 +1003,55 @@ async function calculateAutoAttendanceStatus(date, emp){
   if(nowMin >= lunchStart && nowMin <= lunchEnd){
     const lunchState = await getLunchStateToday(emp.id, date);
 
-    if(!lunchState.hasLunchOut || lunchState.hasLunchIn){
-      return makeRule('ออกพักเที่ยง', 'ปกติ', 0, 0, 0, 'ระบบตัดเป็นออกพักเที่ยงอัตโนมัติ');
-    }
-
-    const lunchOutTime = new Date(lunchState.lastLunchOut.scan_time);
-    const lunchUsed = Math.round((date.getTime() - lunchOutTime.getTime()) / 60000);
-    const allowed = emp.lunch_break_minutes || 60;
-
-    if(lunchUsed <= allowed){
+    // ครั้งแรกของวัน: ออกพักเที่ยง
+    if(!lunchState.hasLunchOut){
       return makeRule(
-        'กลับจากพักเที่ยง',
+        'ออกพักเที่ยง',
         'ปกติ',
         0,
         0,
         0,
-        'ใช้เวลาพัก ' + lunchUsed + ' นาที จากสิทธิ์ ' + allowed + ' นาที'
+        'ระบบตัดเป็นออกพักเที่ยงอัตโนมัติ'
       );
     }
 
-    const lateLunch = lunchUsed - allowed;
+    // มีการออกพักแล้ว แต่ยังไม่มีการกลับเข้าหลังรายการออกพักล่าสุด
+    if(!lunchState.hasLunchIn){
+      const lunchOutTime = new Date(lunchState.lastLunchOut.scan_time);
+      const lunchUsed = Math.round((date.getTime() - lunchOutTime.getTime()) / 60000);
+      const allowed = emp.lunch_break_minutes || 60;
+
+      if(lunchUsed <= allowed){
+        return makeRule(
+          'กลับจากพักเที่ยง',
+          'ปกติ',
+          0,
+          0,
+          0,
+          'ใช้เวลาพัก ' + lunchUsed + ' นาที จากสิทธิ์ ' + allowed + ' นาที'
+        );
+      }
+
+      const lateLunch = lunchUsed - allowed;
+      return makeRule(
+        'กลับจากพักเที่ยง',
+        'พักเกิน ' + lateLunch + ' นาที',
+        lateLunch,
+        0,
+        0,
+        'ใช้เวลาพัก ' + lunchUsed + ' นาที เกินสิทธิ์ ' + allowed + ' นาที'
+      );
+    }
+
+    // วันนี้สแกนออกพักและกลับจากพักครบแล้ว
+    // ให้ทุกครั้งถัดไปเป็นสถานะซ้ำ เพื่อแจ้งเตือนชัดเจน ไม่วนกลับไปเป็นออกพักเที่ยงใหม่
     return makeRule(
       'กลับจากพักเที่ยง',
-      'พักเกิน ' + lateLunch + ' นาที',
-      lateLunch,
+      'สแกนพักเที่ยงซ้ำ',
       0,
       0,
-      'ใช้เวลาพัก ' + lunchUsed + ' นาที เกินสิทธิ์ ' + allowed + ' นาที'
+      0,
+      'วันนี้สแกนออกพักเที่ยงและกลับจากพักเที่ยงครบแล้ว กรุณาตรวจสอบก่อนยืนยัน'
     );
   }
 
