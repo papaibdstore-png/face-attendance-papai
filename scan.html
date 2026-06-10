@@ -507,10 +507,10 @@ function speakThai(text){
   msg.lang = 'th-TH';
 
   // พูดช้าลง ฟังธรรมชาติขึ้น
-  msg.rate = 2.3;
+  msg.rate = 0.9;
 
   // น้ำเสียงต่ำลงนิด
-  msg.pitch = 0.8;
+  msg.pitch = 1;
 
   msg.volume = 1;
 
@@ -751,6 +751,19 @@ async function autoScanFace(){
 
     const scanTime = new Date();
     const rule = await calculateAutoAttendanceStatus(scanTime, bestMatch);
+
+    const duplicateLog = await checkDuplicateStatusToday(bestMatch.id, rule.scan_type, scanTime);
+    const isDuplicateStatus = !!duplicateLog;
+
+    if(isDuplicateStatus){
+      const oldTime = new Date(duplicateLog.scan_time).toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit'});
+      statusText.innerText = 'สถานะนี้เคยสแกนแล้ว วันนี้เวลา ' + oldTime + ' แต่ยังบันทึกซ้ำได้';
+      setBigStatus('⚠️ สแกนสถานะซ้ำ', 'warning');
+      playWarningSound();
+      speakThai(bestMatch.name + ' สถานะ ' + rule.scan_type + ' เคยสแกนแล้ว แต่ยังบันทึกซ้ำได้ครับ');
+      rule.note = 'สแกนซ้ำ: วันนี้เคยบันทึก ' + rule.scan_type + ' เวลา ' + oldTime + ' | ' + rule.note;
+    }
+
     const imageBase64 = captureImage();
 
     pendingRecord = {
@@ -767,7 +780,8 @@ async function autoScanFace(){
       lat: null,
       lng: null,
       image_base64: imageBase64,
-      face_score: bestDistance
+      face_score: bestDistance,
+      is_duplicate_status: isDuplicateStatus
     };
 
     isAutoScanEnabled = false;
@@ -777,7 +791,9 @@ async function autoScanFace(){
 
     previewCard.style.display = 'block';
 
-    if(rule.status_text.includes('สาย') || rule.status_text.includes('พักเกิน') || rule.status_text.includes('ออกก่อน')){
+    if(isDuplicateStatus){
+      setBigStatus('⚠️ สแกนสถานะซ้ำ', 'warning');
+    }else if(rule.status_text.includes('สาย') || rule.status_text.includes('พักเกิน') || rule.status_text.includes('ออกก่อน')){
       setBigStatus('⚠️ ' + rule.status_text, 'warning');
     }else if(rule.status_text.includes('OT')){
       setBigStatus('🕒 ' + rule.status_text, 'ot');
@@ -789,8 +805,9 @@ async function autoScanFace(){
       '<b style="font-size:26px">' + bestMatch.name + ' (' + bestMatch.employee_code + ')</b><br>' +
       '<b style="font-size:34px">' + scanTime.toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit'}) + ' น.</b><br>' +
       '<b style="font-size:28px">' + rule.scan_type + '</b><br>' +
-      '<span class="badge">' + rule.status_text + '</span><br><br>' +
-      'หมายเหตุ: ' + rule.note + '<br><br>' +
+      '<span class="badge">' + rule.status_text + '</span><br>' +
+      (isDuplicateStatus ? '<span class="badge" style="background:#fee2e2;color:#b91c1c">สถานะนี้เคยสแกนแล้ว</span><br>' : '') +
+      '<br>หมายเหตุ: ' + rule.note + '<br><br>' +
       '<b>กดปุ่ม “ยืนยัน” เพื่อบันทึก</b>';
 
     confirmButtons.style.display = 'grid';
@@ -939,6 +956,28 @@ async function sendTelegram(record, imageBase64){
     statusText.innerText = 'บันทึกแล้ว แต่ส่ง Telegram ไม่สำเร็จ: ' + err.message;
     return null;
   }
+}
+
+
+async function checkDuplicateStatusToday(employeeId, scanType, scanTime){
+  const start = new Date(scanTime);
+  start.setHours(0,0,0,0);
+
+  const end = new Date(scanTime);
+  end.setHours(23,59,59,999);
+
+  const { data, error } = await db
+    .from('attendance_logs')
+    .select('id, scan_type, scan_time')
+    .eq('employee_id', employeeId)
+    .eq('scan_type', scanType)
+    .gte('scan_time', start.toISOString())
+    .lte('scan_time', end.toISOString())
+    .order('scan_time', { ascending:false })
+    .limit(1);
+
+  if(error || !data) return null;
+  return data.length ? data[0] : null;
 }
 
 async function calculateAutoAttendanceStatus(date, emp){
